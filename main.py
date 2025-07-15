@@ -1,7 +1,33 @@
 import math
 import random
 import pgzrun
-from pygame import Rect
+import os
+
+
+# Verificar arquivos de áudio no início
+def verificar_arquivos_audio():
+    print("=== VERIFICAÇÃO DE ARQUIVOS ===")
+    arquivo_musica = "music/bg_music.ogg"
+    
+    if os.path.exists(arquivo_musica):
+        tamanho = os.path.getsize(arquivo_musica)
+        print(f"✓ {arquivo_musica} encontrado - Tamanho: {tamanho} bytes")
+        if tamanho == 0:
+            print("⚠️  ATENÇÃO: Arquivo de música está vazio!")
+        else:
+            print("✓ Arquivo parece válido")
+    else:
+        print(f"✗ {arquivo_musica} NÃO encontrado")
+        print("📁 Arquivos na pasta sounds:")
+        try:
+            for arquivo in os.listdir("sounds"):
+                print(f"  - {arquivo}")
+        except:
+            print("  Pasta sounds não existe ou está vazia")
+    print("================================")
+
+# Chamar verificação
+verificar_arquivos_audio()
 
 # Constantes do jogo
 TAMANHO_GRADE = 32
@@ -23,23 +49,34 @@ teclas_pressionadas = {
 }
 
 class AnimadorSprite:
-    def __init__(self, quadros, duracao_quadro=0.2):
-        self.quadros = quadros
+    def __init__(self, sprites, duracao_quadro=0.2):
+        self.sprites = sprites
         self.duracao_quadro = duracao_quadro
         self.quadro_atual = 0
         self.tempo_quadro = 0
+        self.escala = 1.0
+        self.tempo_animacao = 0
         
-    def atualizar(self, dt):
+    def atualizar(self, dt, movendo=False):
         self.tempo_quadro += dt
-        if self.tempo_quadro >= self.duracao_quadro:
+        self.tempo_animacao += dt
+        
+        # Animação de escala (respiração)
+        if movendo:
+            self.escala = 1.0 + 0.1 * math.sin(self.tempo_animacao * 8)
+        else:
+            self.escala = 1.0 + 0.05 * math.sin(self.tempo_animacao * 3)
+        
+        # Troca de sprites quando há mais de um
+        if len(self.sprites) > 1 and self.tempo_quadro >= self.duracao_quadro:
             self.tempo_quadro = 0
-            self.quadro_atual = (self.quadro_atual + 1) % len(self.quadros)
+            self.quadro_atual = (self.quadro_atual + 1) % len(self.sprites)
     
-    def obter_quadro_atual(self):
-        return self.quadros[self.quadro_atual]
+    def obter_sprite_atual(self):
+        return self.sprites[self.quadro_atual]
 
 class Personagem:
-    def __init__(self, x, y, cores_parado, cores_movimento):
+    def __init__(self, x, y, sprites_parado, sprites_movimento):
         self.grade_x = x
         self.grade_y = y
         self.pixel_x = x * TAMANHO_GRADE
@@ -49,12 +86,12 @@ class Personagem:
         self.velocidade = 120
         self.movendo = False
         
-        self.animador_parado = AnimadorSprite(cores_parado, 0.8)
-        self.animador_movimento = AnimadorSprite(cores_movimento, 0.3)
+        self.animador_parado = AnimadorSprite(sprites_parado, 0.8)
+        self.animador_movimento = AnimadorSprite(sprites_movimento, 0.3)
         
     def atualizar(self, dt):
-        self.animador_parado.atualizar(dt)
-        self.animador_movimento.atualizar(dt)
+        self.animador_parado.atualizar(dt, self.movendo)
+        self.animador_movimento.atualizar(dt, self.movendo)
         
         if self.movendo:
             dx = self.alvo_x - self.pixel_x
@@ -78,33 +115,35 @@ class Personagem:
             self.alvo_y = grade_y * TAMANHO_GRADE
             self.movendo = True
     
-    def obter_cor_atual(self):
+    def obter_sprite_atual(self):
         if self.movendo:
-            return self.animador_movimento.obter_quadro_atual()
+            return self.animador_movimento.obter_sprite_atual()
         else:
-            return self.animador_parado.obter_quadro_atual()
+            return self.animador_parado.obter_sprite_atual()
+    
+    def obter_escala_atual(self):
+        if self.movendo:
+            return self.animador_movimento.escala
+        else:
+            return self.animador_parado.escala
     
     def obter_retangulo(self):
         return Rect(self.pixel_x, self.pixel_y, TAMANHO_GRADE, TAMANHO_GRADE)
 
 class Jogador(Personagem):
     def __init__(self, x, y):
-        cores_parado = [(0, 255, 0), (0, 200, 0), (0, 255, 50)]
-        cores_movimento = [(50, 255, 50), (0, 255, 0), (100, 255, 100), (0, 200, 0)]
-        super().__init__(x, y, cores_parado, cores_movimento)
+        sprites_parado = ["hero_idle1"]
+        sprites_movimento = ["hero_idle1"]
+        super().__init__(x, y, sprites_parado, sprites_movimento)
         self.pontuacao = 0
         self.vida = 3
 
 class Inimigo(Personagem):
     def __init__(self, x, y, tipo_inimigo):
-        if tipo_inimigo == 'goblin':
-            cores_parado = [(255, 0, 0), (200, 0, 0), (255, 50, 50)]
-            cores_movimento = [(255, 0, 0), (200, 0, 0), (255, 100, 100), (150, 0, 0)]
-        else:  # orc
-            cores_parado = [(150, 0, 0), (100, 0, 0), (180, 0, 0)]
-            cores_movimento = [(150, 0, 0), (100, 0, 0), (120, 0, 0), (180, 20, 20)]
+        sprites_parado = ["enemy_idle1"]
+        sprites_movimento = ["enemy_idle1"]
         
-        super().__init__(x, y, cores_parado, cores_movimento)
+        super().__init__(x, y, sprites_parado, sprites_movimento)
         self.tipo_inimigo = tipo_inimigo
         self.cronometro_movimento = 0
         self.intervalo_movimento = random.uniform(1.5, 3.5)
@@ -147,9 +186,38 @@ class Jogo:
         self.som_ativado = True
         self.cronometro_movimento = 0
         self.velocidade_movimento = 0.15 
-        self.fase_atual = 1  
+        self.fase_atual = 1
+        self.musica_inicializada = False
         self.reiniciar_jogo()
         
+    def inicializar_musica(self):
+        """Inicializa a música de fundo de forma simples"""
+        if self.musica_inicializada or not self.musica_ativada:
+            return
+            
+        print("🎵 Iniciando música de fundo...")
+        try:
+            music.play("bg_music")
+            music.set_volume(0.7)
+            self.musica_inicializada = True
+            print("✅ Música iniciada com sucesso!")
+        except Exception as e:
+            print(f"❌ Erro ao iniciar música: {e}")
+    
+    def alternar_musica(self):
+        """Liga/desliga a música"""
+        self.musica_ativada = not self.musica_ativada
+        print(f"🎵 Música {'LIGADA' if self.musica_ativada else 'DESLIGADA'}")
+        
+        if self.musica_ativada:
+            self.musica_inicializada = False
+            self.inicializar_musica()
+        else:
+            try:
+                music.stop()
+            except:
+                pass
+
     def reiniciar_jogo(self):
         self.fase_atual = 1
         self.jogador = Jogador(1, 1)
@@ -157,9 +225,9 @@ class Jogo:
         self.tesouros = []
         self.paredes = set()
         self.gerar_nivel()
-        
+    
     def gerar_nivel(self):
-        # Gerar paredes
+        # Gerar paredes nas bordas e aleatoriamente pelo mapa
         for x in range(LARGURA_MUNDO):
             for y in range(ALTURA_MUNDO):
                 if x == 0 or x == LARGURA_MUNDO-1 or y == 0 or y == ALTURA_MUNDO-1:
@@ -167,7 +235,7 @@ class Jogo:
                 elif random.random() < 0.12:
                     self.paredes.add((x, y))
         
-        # Garantir que área inicial do jogador está livre
+        # Limpar área ao redor da posição inicial do jogador (1, 1)
         for dx in range(-1, 2):
             for dy in range(-1, 2):
                 self.paredes.discard((1 + dx, 1 + dy))
@@ -181,15 +249,14 @@ class Jogo:
             if not self.posicao_bloqueada_apenas_paredes(x, y):
                 if math.sqrt((x - 1)**2 + (y - 1)**2) > 3:
                     tipo_inimigo = random.choice(['goblin', 'orc'])
-                    # Ajustar velocidade baseado na fase
-                    velocidade_inimigo = 1.0 if self.fase_atual == 1 else 0.5  # Fase 2 é mais rápida
+                    velocidade_inimigo = 1.0 if self.fase_atual == 1 else 0.5
                     inimigo = Inimigo(x, y, tipo_inimigo)
                     inimigo.intervalo_movimento = random.uniform(1.5, 3.5) * velocidade_inimigo
                     self.inimigos.append(inimigo)
                     contador_inimigos += 1
             tentativas += 1
         
-        # Gerar tesouros em posições acessíveis
+        # Gerar tesouros
         contador_tesouros = 0
         tentativas = 0
         while contador_tesouros < 8 and tentativas < 200:
@@ -201,14 +268,13 @@ class Jogo:
                 self.tesouros.append((x, y))
                 contador_tesouros += 1
             tentativas += 1
-    
+        
     def posicao_acessivel(self, alvo_x, alvo_y):
-        """Verifica se é possível chegar até uma posição a partir do spawn do jogador"""
         if (alvo_x, alvo_y) in self.paredes:
             return False
         
         visitados = set()
-        fila = [(1, 1)]  # Posição inicial do jogador
+        fila = [(1, 1)]
         
         while fila:
             x, y = fila.pop(0)
@@ -219,7 +285,6 @@ class Jogo:
             if x == alvo_x and y == alvo_y:
                 return True
             
-            # Verificar todas as 4 direções
             for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                 novo_x, novo_y = x + dx, y + dy
                 if (0 <= novo_x < LARGURA_MUNDO and 
@@ -231,17 +296,13 @@ class Jogo:
         return False
 
     def posicao_bloqueada_apenas_paredes(self, x, y):
-        """Verifica apenas paredes e limites, não inimigos"""
         if x < 0 or x >= LARGURA_MUNDO or y < 0 or y >= ALTURA_MUNDO:
             return True
-        
         if (x, y) in self.paredes:
             return True
-        
         return False
 
     def avancar_fase(self):
-        """Avança para a próxima fase"""
         self.fase_atual += 1
         self.jogador.grade_x = 1
         self.jogador.grade_y = 1
@@ -256,27 +317,23 @@ class Jogo:
         self.gerar_nivel()
     
     def posicao_bloqueada(self, x, y):
-            # Verifica limites do mundo
-            if x < 0 or x >= LARGURA_MUNDO or y < 0 or y >= ALTURA_MUNDO:
+        if x < 0 or x >= LARGURA_MUNDO or y < 0 or y >= ALTURA_MUNDO:
+            return True
+        if (x, y) in self.paredes:
+            return True
+        for inimigo in self.inimigos:
+            if inimigo.grade_x == x and inimigo.grade_y == y:
                 return True
-            
-            # Verifica paredes
-            if (x, y) in self.paredes:
-                return True
-            
-            # Verifica se há outro inimigo na posição (mas permite movimento do jogador)
-            for inimigo in self.inimigos:
-                if inimigo.grade_x == x and inimigo.grade_y == y:
-                    return True
-            
-            # NÃO bloqueia se o jogador estiver na posição - permite colisão
-            return False
+        return False
         
     def atualizar(self, dt):
+        # Inicializar música quando o jogo estiver rodando
+        if not self.musica_inicializada and self.musica_ativada:
+            self.inicializar_musica()
+        
         if self.estado == ESTADO_JOGANDO:
             self.jogador.atualizar(dt)
             
-            # Verificar movimento contínuo
             if not self.jogador.movendo:
                 self.cronometro_movimento += dt
                 if self.cronometro_movimento >= self.velocidade_movimento:
@@ -289,7 +346,6 @@ class Jogo:
             self.verificar_colisoes()
             self.verificar_tesouros()
             
-            # Verificar se todos os tesouros foram coletados
             if len(self.tesouros) == 0:
                 if self.fase_atual == 1:
                     self.avancar_fase()
@@ -309,7 +365,6 @@ class Jogo:
             novo_y += 1
         
         if (novo_x, novo_y) != (self.jogador.grade_x, self.jogador.grade_y):
-            # Verifica apenas paredes e limites, não inimigos
             if not self.posicao_bloqueada_apenas_paredes(novo_x, novo_y):
                 self.jogador.mover_para(novo_x, novo_y)
 
@@ -317,9 +372,7 @@ class Jogo:
         for inimigo in self.inimigos:
             if (self.jogador.grade_x == inimigo.grade_x and 
                 self.jogador.grade_y == inimigo.grade_y):
-                # Game Over imediato após colisão
                 self.estado = ESTADO_FIM_JOGO
-                # Zerar as teclas pressionadas para evitar movimento no game over
                 global teclas_pressionadas
                 teclas_pressionadas = {
                     'esquerda': False,
@@ -386,13 +439,11 @@ def desenhar_menu():
                     fontsize=16, color=(150, 150, 150))
 
 def desenhar_jogo():
-    # Fundos diferentes por fase
     if jogo.fase_atual == 1:
-        screen.fill((15, 15, 25))  # Azul escuro
+        screen.fill((15, 15, 25))
     else:
-        screen.fill((25, 10, 10))  # Vermelho escuro
+        screen.fill((25, 10, 10))
     
-    # Cor das paredes muda por fase
     cor_parede = (80, 80, 80) if jogo.fase_atual == 1 else (100, 60, 60)
     cor_borda_parede = (60, 60, 60) if jogo.fase_atual == 1 else (80, 40, 40)
     
@@ -401,7 +452,7 @@ def desenhar_jogo():
         screen.draw.filled_rect(ret_parede, cor_parede)
         screen.draw.rect(ret_parede, cor_borda_parede)
     
-    # Resto do código de desenho permanece igual...
+    # Desenhar tesouros
     for x, y in jogo.tesouros:
         ret_tesouro = Rect(x * TAMANHO_GRADE + 6, y * TAMANHO_GRADE + 6, 
                           TAMANHO_GRADE - 12, TAMANHO_GRADE - 12)
@@ -410,27 +461,60 @@ def desenhar_jogo():
                           TAMANHO_GRADE - 20, TAMANHO_GRADE - 20)
         screen.draw.filled_rect(ret_interno, (255, 255, 150))
     
+    # Desenhar inimigos com sprites
     for inimigo in jogo.inimigos:
-        ret_inimigo = Rect(inimigo.pixel_x + 2, inimigo.pixel_y + 2, 
-                          TAMANHO_GRADE - 4, TAMANHO_GRADE - 4)
-        cor = inimigo.obter_cor_atual()
-        screen.draw.filled_rect(ret_inimigo, cor)
-        tamanho_olho = 4
-        olho_esquerdo = Rect(inimigo.pixel_x + 8, inimigo.pixel_y + 8, tamanho_olho, tamanho_olho)
-        olho_direito = Rect(inimigo.pixel_x + 20, inimigo.pixel_y + 8, tamanho_olho, tamanho_olho)
-        screen.draw.filled_rect(olho_esquerdo, (255, 255, 255))
-        screen.draw.filled_rect(olho_direito, (255, 255, 255))
+        try:
+            sprite_nome = inimigo.obter_sprite_atual()
+            escala = inimigo.obter_escala_atual()
+            
+            tamanho_sprite = int(24 * escala)
+            pos_x = int(inimigo.pixel_x + TAMANHO_GRADE//2 - tamanho_sprite//2)
+            pos_y = int(inimigo.pixel_y + TAMANHO_GRADE//2 - tamanho_sprite//2)
+            
+            sprite_actor = Actor(sprite_nome)
+            sprite_actor.pos = (pos_x + tamanho_sprite//2, pos_y + tamanho_sprite//2)
+            
+            import pygame
+            sprite_surface = pygame.transform.scale(sprite_actor._surf, (tamanho_sprite, tamanho_sprite))
+            screen.blit(sprite_surface, (pos_x, pos_y))
+            
+        except:
+            ret_inimigo = Rect(inimigo.pixel_x + 4, inimigo.pixel_y + 4, 
+                              TAMANHO_GRADE - 8, TAMANHO_GRADE - 8)
+            screen.draw.filled_rect(ret_inimigo, (255, 0, 0))
+            tamanho_olho = 3
+            olho_esquerdo = Rect(inimigo.pixel_x + 10, inimigo.pixel_y + 10, tamanho_olho, tamanho_olho)
+            olho_direito = Rect(inimigo.pixel_x + 18, inimigo.pixel_y + 10, tamanho_olho, tamanho_olho)
+            screen.draw.filled_rect(olho_esquerdo, (255, 255, 255))
+            screen.draw.filled_rect(olho_direito, (255, 255, 255))
     
-    ret_jogador = Rect(jogo.jogador.pixel_x + 1, jogo.jogador.pixel_y + 1, 
-                      TAMANHO_GRADE - 2, TAMANHO_GRADE - 2)
-    cor = jogo.jogador.obter_cor_atual()
-    screen.draw.filled_rect(ret_jogador, cor)
-    tamanho_olho = 3
-    olho_esquerdo = Rect(jogo.jogador.pixel_x + 8, jogo.jogador.pixel_y + 8, tamanho_olho, tamanho_olho)
-    olho_direito = Rect(jogo.jogador.pixel_x + 21, jogo.jogador.pixel_y + 8, tamanho_olho, tamanho_olho)
-    screen.draw.filled_rect(olho_esquerdo, (0, 0, 0))
-    screen.draw.filled_rect(olho_direito, (0, 0, 0))
+    # Desenhar jogador com sprite
+    try:
+        sprite_nome = jogo.jogador.obter_sprite_atual()
+        escala = jogo.jogador.obter_escala_atual()
+        
+        tamanho_sprite = int(24 * escala)
+        pos_x = int(jogo.jogador.pixel_x + TAMANHO_GRADE//2 - tamanho_sprite//2)
+        pos_y = int(jogo.jogador.pixel_y + TAMANHO_GRADE//2 - tamanho_sprite//2)
+        
+        sprite_actor = Actor(sprite_nome)
+        sprite_actor.pos = (pos_x + tamanho_sprite//2, pos_y + tamanho_sprite//2)
+        
+        import pygame
+        sprite_surface = pygame.transform.scale(sprite_actor._surf, (tamanho_sprite, tamanho_sprite))
+        screen.blit(sprite_surface, (pos_x, pos_y))
+        
+    except:
+        ret_jogador = Rect(jogo.jogador.pixel_x + 4, jogo.jogador.pixel_y + 4, 
+                          TAMANHO_GRADE - 8, TAMANHO_GRADE - 8)
+        screen.draw.filled_rect(ret_jogador, (0, 255, 0))
+        tamanho_olho = 2
+        olho_esquerdo = Rect(jogo.jogador.pixel_x + 10, jogo.jogador.pixel_y + 10, tamanho_olho, tamanho_olho)
+        olho_direito = Rect(jogo.jogador.pixel_x + 20, jogo.jogador.pixel_y + 10, tamanho_olho, tamanho_olho)
+        screen.draw.filled_rect(olho_esquerdo, (0, 0, 0))
+        screen.draw.filled_rect(olho_direito, (0, 0, 0))
     
+    # Interface do usuário
     ui_y = ALTURA_TELA - 55
     screen.draw.filled_rect(Rect(0, ui_y, LARGURA_TELA, 64), (40, 40, 40))
     
@@ -442,7 +526,7 @@ def desenhar_jogo():
                     fontsize=20, color="white")
     screen.draw.text(f"Fase: {jogo.fase_atual}", (350, ui_y + 10), 
                     fontsize=20, color="white")
-    
+
 def desenhar_fim_jogo():
     screen.fill((0, 0, 0))
     
@@ -471,8 +555,7 @@ def on_mouse_down(pos):
             jogo.estado = ESTADO_JOGANDO
             jogo.reiniciar_jogo()
         elif botao_musica.collidepoint(pos):
-            jogo.musica_ativada = not jogo.musica_ativada
-            jogo.som_ativado = jogo.musica_ativada
+            jogo.alternar_musica()
         elif botao_sair.collidepoint(pos):
             quit()
 
@@ -503,7 +586,7 @@ def on_key_up(key):
 # Configuração do pgzero
 WIDTH = LARGURA_TELA
 HEIGHT = ALTURA_TELA
+TITLE = "Explorador de Masmorras"
 
 # Iniciar o jogo
-if __name__ == "__main__":
-    pgzrun.go()
+pgzrun.go()
